@@ -633,6 +633,8 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
             fromIntent = false;
 
         }
+
+        invalidateOptionsMenu();
     }
 
     @Override
