@@ -443,7 +443,14 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
                     mTermSessions.add(createTermSession());
                 } catch (IOException e) {
                     Toast.makeText(this, "Failed to start terminal session", Toast.LENGTH_LONG).show();
-                    finish();
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        this.finishAndRemoveTask();
+                        new Exiter().exitApplication(getApplicationContext());
+
+                    } else {
+                        this.finish();
+                        new Exiter().exitApplication(getApplicationContext());
+                    }
                     return;
                 }
             }
@@ -484,7 +491,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
             mActionBar.setSelectedNavigationItem(position);
         }
     }
-
+public boolean safe = false;
     @Override
     public void onDestroy() {
         super.onDestroy();
@@ -495,6 +502,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         if (mStopServiceOnFinish) {
             stopService(TSIntent);
         }
+
         mTermService = null;
         mTSConnection = null;
 
@@ -505,6 +513,16 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         if (mWifiLock.isHeld()) {
             Log.d("Wifilock","------RELEASED");
             mWifiLock.release();
+        }
+
+        if(this.isFinishing()&&!safe){
+            Log.d("User killed leaving","BYE");
+            stopService(TSIntent);
+            mTermService = null;
+            mTSConnection = null;
+            for(int i =0; i <mTermSessions.size(); i++){
+                doCloseWindow(); //close all the windows should finish activity too
+            }
         }
     }
 
@@ -644,6 +662,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         }
 
         ActivityCompat.invalidateOptionsMenu(this);
+        safe=false;//nothing is ever safe.
     }
 
     @Override
@@ -862,7 +881,14 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
                     // TODO the left path will be invoked when nothing happened, but this Activity was destroyed!
                     if (mTermSessions == null || mTermSessions.size() == 0) {
                         mStopServiceOnFinish = true;
-                        finish();
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            this.finishAndRemoveTask();
+                            new Exiter().exitApplication(getApplicationContext());
+
+                        } else {
+                            this.finish();
+                            new Exiter().exitApplication(getApplicationContext());
+                        }
                     }
                 }
                 break;
@@ -992,6 +1018,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
                     case TermSettings.BACK_KEY_STOPS_SERVICE:
                         mStopServiceOnFinish = true;
                     case TermSettings.BACK_KEY_CLOSES_ACTIVITY:
+                        safe=true;
                         finish();
                         return true;
                     case TermSettings.BACK_KEY_CLOSES_WINDOW:
@@ -1021,7 +1048,14 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
 
         if (sessions.size() == 0) {
             mStopServiceOnFinish = true;
-            finish();
+            if (Build.VERSION.SDK_INT >= 21) {
+                this.finishAndRemoveTask();
+                new Exiter().exitApplication(getApplicationContext());
+
+            } else {
+                this.finish();
+                new Exiter().exitApplication(getApplicationContext());
+            }
         } else if (sessions.size() < mViewFlipper.getChildCount()) {
             for (int i = 0; i < mViewFlipper.getChildCount(); ++i) {
                 EmulatorView v = (EmulatorView) mViewFlipper.getChildAt(i);
