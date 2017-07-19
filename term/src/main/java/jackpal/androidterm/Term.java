@@ -546,6 +546,7 @@ public boolean safe = false;
         return session;
     }
 
+
     private TermView createEmulatorView(TermSession session) {
         DisplayMetrics metrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(metrics);
@@ -748,7 +749,8 @@ public boolean safe = false;
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main, menu);
         MenuItemCompat.setShowAsAction(menu.findItem(R.id.menu_new_window), MenuItemCompat.SHOW_AS_ACTION_ALWAYS);
-        MenuItemCompat.setShowAsAction(menu.findItem(R.id.menu_close_window), MenuItemCompat.SHOW_AS_ACTION_IF_ROOM);
+        MenuItemCompat.setShowAsAction(menu.findItem(R.id.menu_new_pwnix_window), MenuItemCompat.SHOW_AS_ACTION_ALWAYS);
+        MenuItemCompat.setShowAsAction(menu.findItem(R.id.menu_close_window), MenuItemCompat.SHOW_AS_ACTION_ALWAYS);
         return true;
     }
 
@@ -757,6 +759,8 @@ public boolean safe = false;
         int id = item.getItemId();
         if (id == R.id.menu_preferences) {
             doPreferences();
+        } else if (id == R.id.menu_new_pwnix_window) {
+            doCreateNewPwnixWindow();
         } else if (id == R.id.menu_new_window) {
             doCreateNewWindow();
         } else if (id == R.id.menu_close_window) {
@@ -788,6 +792,26 @@ public boolean safe = false;
             mActionBar.hide();
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void doCreateNewPwnixWindow() {
+        if (mTermSessions == null) {
+            Log.w(TermDebug.LOG_TAG, "Couldn't create new window because mTermSessions == null");
+            return;
+        }
+
+        String INITIAL_COMMAND = "bootpwn\rclear";
+        String INITIAL_COMMAND_PROPERTY = "jackpal.androidterm.iInitialCommand";
+        String REMOTE_INTENT = "jackpal.androidterm.RUN_SCRIPT";
+        String INTENT_CATEGORY = "android.intent.category.DEFAULT";
+        Intent intent = new Intent(REMOTE_INTENT);
+        intent.addCategory(INTENT_CATEGORY);
+        intent.putExtra(INITIAL_COMMAND_PROPERTY, INITIAL_COMMAND);
+        startActivity(intent);
+        finish();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ECLAIR) {
+            overridePendingTransition(0, 0);
+        }
     }
 
     private void doCreateNewWindow() {
