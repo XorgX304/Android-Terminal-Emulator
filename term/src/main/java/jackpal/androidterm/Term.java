@@ -16,6 +16,7 @@
 
 package jackpal.androidterm;
 
+import android.os.Build;
 import android.text.TextUtils;
 
 import jackpal.androidterm.compat.ActionBarCompat;
@@ -119,6 +120,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
 
     private boolean mBackKeyPressed;
     private boolean fromIntent = false;
+    private static boolean wakelockDesired,wifilockDesired = false;
 
     private static final String ACTION_PATH_BROADCAST = "jackpal.androidterm.broadcast.APPEND_TO_PATH";
     private static final String ACTION_PATH_PREPEND_BROADCAST = "jackpal.androidterm.broadcast.PREPEND_TO_PATH";
@@ -441,7 +443,14 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
                     mTermSessions.add(createTermSession());
                 } catch (IOException e) {
                     Toast.makeText(this, "Failed to start terminal session", Toast.LENGTH_LONG).show();
-                    finish();
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        this.finishAndRemoveTask();
+                        new Exiter().exitApplication(getApplicationContext());
+
+                    } else {
+                        this.finish();
+                        new Exiter().exitApplication(getApplicationContext());
+                    }
                     return;
                 }
             }
@@ -482,7 +491,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
             mActionBar.setSelectedNavigationItem(position);
         }
     }
-
+public boolean safe = false;
     @Override
     public void onDestroy() {
         super.onDestroy();
@@ -493,13 +502,27 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         if (mStopServiceOnFinish) {
             stopService(TSIntent);
         }
+
         mTermService = null;
         mTSConnection = null;
+
         if (mWakeLock.isHeld()) {
+            Log.d("Wakelock","------RELEASED");
             mWakeLock.release();
         }
         if (mWifiLock.isHeld()) {
+            Log.d("Wifilock","------RELEASED");
             mWifiLock.release();
+        }
+
+        if(this.isFinishing()&&!safe){
+            Log.d("User killed leaving","BYE");
+            stopService(TSIntent);
+            mTermService = null;
+            mTSConnection = null;
+            for(int i =0; i <mTermSessions.size(); i++){
+                doCloseWindow(); //close all the windows should finish activity too
+            }
         }
     }
 
@@ -605,12 +628,28 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
     @Override
     public void onResume() {
         super.onResume();
+        /* lock persistence */
+        loadLockStateFromPrefs();
+
+        /* lock persistence */
+        if(wifilockDesired){
+            if(!mWifiLock.isHeld()){
+                mWifiLock.acquire();
+                Log.d("WIFILOCK","AQUIRED -onresume");
+            }
+        }
+        if(wakelockDesired){
+           if(!mWakeLock.isHeld()){
+               mWakeLock.acquire();
+               Log.d("WAKELOCK","AQUIRED -onresume");
+           }
+        }
 
         /* window persistence */
         if (!fromIntent) {
 
             //if not from intent we are going through life cycle - window should be restored.
-            SharedPreferences prefs = getSharedPreferences("onResumeSElectWindowIndex", MODE_PRIVATE);
+            SharedPreferences prefs = getSharedPreferences("onResumeSelectWindowIndex", MODE_PRIVATE);
             int restoredIndex = prefs.getInt("index", 0);
             onResumeSelectWindow = restoredIndex;
             mViewFlipper.setDisplayedChild(restoredIndex);
@@ -621,17 +660,25 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
             fromIntent = false;
 
         }
+
+        ActivityCompat.invalidateOptionsMenu(this);
+        safe=false;//nothing is ever safe.
     }
 
     @Override
     public void onPause() {
-
         /* window persistence */
         onResumeSelectWindow = mViewFlipper.getDisplayedChild();
-        SharedPreferences.Editor editor = getSharedPreferences("onResumeSElectWindowIndex", MODE_PRIVATE).edit();
+        SharedPreferences.Editor editor = getSharedPreferences("onResumeSelectWindowIndex", MODE_PRIVATE).edit();
         editor.putInt("index", onResumeSelectWindow);
-        editor.commit();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.GINGERBREAD) {
+            editor.apply();
+        } else {
+            editor.commit();
+        }
 
+        /* lock persistence */
+        //saveLockStateToPrefs();
 
         if (AndroidCompat.SDK < 5) {
             /* If we lose focus between a back key down and a back key up,
@@ -673,6 +720,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
 
         super.onStop();
     }
+    
 
     private boolean checkHaveFullHwKeyboard(Configuration c) {
         return (c.keyboard == Configuration.KEYBOARD_QWERTY) &&
@@ -774,6 +822,10 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         };
         b.setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int id) {
+                InputMethodManager imm = (InputMethodManager)
+                        getSystemService(Context.INPUT_METHOD_SERVICE);
+                imm.hideSoftInputFromWindow(
+                        mViewFlipper.getWindowToken(), 0);
                 dialog.dismiss();
                 mHandler.post(closeWindow);
             }
@@ -798,6 +850,17 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         if (mTermSessions.size() != 0) {
             mViewFlipper.showNext();
         }
+
+        if (mTermSessions.size() == 0) {
+            if (Build.VERSION.SDK_INT >= 21) {
+                this.finishAndRemoveTask();
+                new Exiter().exitApplication(getApplicationContext());
+
+            } else {
+                this.finish();
+                new Exiter().exitApplication(getApplicationContext());
+            }
+        }
     }
 
     @Override
@@ -818,7 +881,14 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
                     // TODO the left path will be invoked when nothing happened, but this Activity was destroyed!
                     if (mTermSessions == null || mTermSessions.size() == 0) {
                         mStopServiceOnFinish = true;
-                        finish();
+                        if (Build.VERSION.SDK_INT >= 21) {
+                            this.finishAndRemoveTask();
+                            new Exiter().exitApplication(getApplicationContext());
+
+                        } else {
+                            this.finish();
+                            new Exiter().exitApplication(getApplicationContext());
+                        }
                     }
                 }
                 break;
@@ -856,6 +926,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
 
     @Override
     public boolean onPrepareOptionsMenu(Menu menu) {
+        Log.d("onPrepareOptionsMenu","~~~~~~~~~~~");
         MenuItem wakeLockItem = menu.findItem(R.id.menu_toggle_wakelock);
         MenuItem wifiLockItem = menu.findItem(R.id.menu_toggle_wifilock);
         if (mWakeLock.isHeld()) {
@@ -863,6 +934,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         } else {
             wakeLockItem.setTitle(R.string.enable_wakelock);
         }
+
         if (mWifiLock.isHeld()) {
             wifiLockItem.setTitle(R.string.disable_wifilock);
         } else {
@@ -946,6 +1018,7 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
                     case TermSettings.BACK_KEY_STOPS_SERVICE:
                         mStopServiceOnFinish = true;
                     case TermSettings.BACK_KEY_CLOSES_ACTIVITY:
+                        safe=true;
                         finish();
                         return true;
                     case TermSettings.BACK_KEY_CLOSES_WINDOW:
@@ -975,7 +1048,14 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
 
         if (sessions.size() == 0) {
             mStopServiceOnFinish = true;
-            finish();
+            if (Build.VERSION.SDK_INT >= 21) {
+                this.finishAndRemoveTask();
+                new Exiter().exitApplication(getApplicationContext());
+
+            } else {
+                this.finish();
+                new Exiter().exitApplication(getApplicationContext());
+            }
         } else if (sessions.size() < mViewFlipper.getChildCount()) {
             for (int i = 0; i < mViewFlipper.getChildCount(); ++i) {
                 EmulatorView v = (EmulatorView) mViewFlipper.getChildAt(i);
@@ -1097,24 +1177,53 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         InputMethodManager imm = (InputMethodManager)
                 getSystemService(Context.INPUT_METHOD_SERVICE);
         imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
-
     }
 
     private void doToggleWakeLock() {
         if (mWakeLock.isHeld()) {
+            wakelockDesired=false;
             mWakeLock.release();
+            Log.d("WAKELOCK","RELEASED");
         } else {
+            wakelockDesired=true;
             mWakeLock.acquire();
+            Log.d("WAKELOCK","AQUIRED");
         }
+        saveLockStateToPrefs();
         ActivityCompat.invalidateOptionsMenu(this);
+
+    }
+
+    private void saveLockStateToPrefs(){
+        SharedPreferences.Editor prefsEditor = getSharedPreferences("LocksDesired", MODE_PRIVATE).edit();
+        prefsEditor.putBoolean("wifilockdesired", wifilockDesired);
+        prefsEditor.putBoolean("wakelockdesired", wakelockDesired);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.GINGERBREAD) {
+            prefsEditor.apply();
+        } else {
+            prefsEditor.commit();
+        }
+        Log.d("Lockstate","SAVED:WI:"+wifilockDesired+", WA:"+wakelockDesired);
+    }
+
+    private void loadLockStateFromPrefs(){
+        SharedPreferences sharedprefs = getSharedPreferences("LocksDesired", MODE_PRIVATE);
+        wifilockDesired = sharedprefs.getBoolean("wifilockdesired", false);
+        wakelockDesired = sharedprefs.getBoolean("wakelockdesired", false);
+        Log.d("Lockstate","LOADED:WI:"+wifilockDesired+", WA:"+wakelockDesired);
     }
 
     private void doToggleWifiLock() {
         if (mWifiLock.isHeld()) {
             mWifiLock.release();
+            wifilockDesired=false;
+            Log.d("WIFILOCK","RELEASED");
         } else {
             mWifiLock.acquire();
+            wifilockDesired=true;
+            Log.d("WIFILOCK","AQUIRED");
         }
+        saveLockStateToPrefs();
         ActivityCompat.invalidateOptionsMenu(this);
     }
 
